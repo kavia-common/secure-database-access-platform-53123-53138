@@ -133,13 +133,76 @@ EOF
 echo "psql postgresql://${DB_USER}:${DB_PASSWORD}@localhost:${DB_PORT}/${DB_NAME}" > db_connection.txt
 echo "Connection string saved to db_connection.txt"
 
-# Save environment variables to a file
+# ---------------------------------------------------------------------------
+# Repeatable demo setup (least-privilege MCP roles + schema + seed data)
+# ---------------------------------------------------------------------------
+# Stable demo roles (used by the MCP server)
+export MCP_RO_USER="${MCP_RO_USER:-mcp_ro}"
+export MCP_RO_PASSWORD="${MCP_RO_PASSWORD:-mcp_ro_password_change_me}"
+export MCP_RW_USER="${MCP_RW_USER:-mcp_rw}"
+export MCP_RW_PASSWORD="${MCP_RW_PASSWORD:-mcp_rw_password_change_me}"
+export DEMO_SCHEMA="${DEMO_SCHEMA:-demo}"
+
+if [ -f "./init_demo_db.sh" ]; then
+    echo ""
+    echo "Initializing demo schema/data + MCP roles..."
+    chmod +x ./init_demo_db.sh || true
+    DB_NAME="${DB_NAME}" DB_PORT="${DB_PORT}" \
+      MCP_RO_USER="${MCP_RO_USER}" MCP_RO_PASSWORD="${MCP_RO_PASSWORD}" \
+      MCP_RW_USER="${MCP_RW_USER}" MCP_RW_PASSWORD="${MCP_RW_PASSWORD}" \
+      DEMO_SCHEMA="${DEMO_SCHEMA}" \
+      ./init_demo_db.sh || echo "⚠ Demo init failed (see logs above)."
+fi
+
+# Save environment variables to a file (for db_visualizer and local tooling)
 cat > db_visualizer/postgres.env << EOF
 export POSTGRES_URL="postgresql://localhost:${DB_PORT}/${DB_NAME}"
 export POSTGRES_USER="${DB_USER}"
 export POSTGRES_PASSWORD="${DB_PASSWORD}"
 export POSTGRES_DB="${DB_NAME}"
 export POSTGRES_PORT="${DB_PORT}"
+
+# MCP least-privilege demo roles
+export MCP_RO_USER="${MCP_RO_USER}"
+export MCP_RO_PASSWORD="${MCP_RO_PASSWORD}"
+export MCP_RW_USER="${MCP_RW_USER}"
+export MCP_RW_PASSWORD="${MCP_RW_PASSWORD}"
+export DEMO_SCHEMA="${DEMO_SCHEMA}"
+
+# Suggested MCP server connection strings (use as DATABASE_URL depending on mode)
+export MCP_POSTGRES_URL_RO="postgresql://${MCP_RO_USER}:${MCP_RO_PASSWORD}@localhost:${DB_PORT}/${DB_NAME}"
+export MCP_POSTGRES_URL_RW="postgresql://${MCP_RW_USER}:${MCP_RW_PASSWORD}@localhost:${DB_PORT}/${DB_NAME}"
+EOF
+
+# Stable connection guidance for the MCP server to use
+cat > mcp_connection_guidance.txt << EOF
+Stable PostgreSQL connection guidance (repeatable demo)
+====================================================
+
+Base DB (admin/demo owner)
+- Database: ${DB_NAME}
+- Port:     ${DB_PORT}
+- Owner:    ${DB_USER}
+
+Least-privilege MCP roles (recommended)
+- Read-only role:
+    username: ${MCP_RO_USER}
+    password: ${MCP_RO_PASSWORD}
+    url: postgresql://${MCP_RO_USER}:<password>@localhost:${DB_PORT}/${DB_NAME}
+
+- Read-write role:
+    username: ${MCP_RW_USER}
+    password: ${MCP_RW_PASSWORD}
+    url: postgresql://${MCP_RW_USER}:<password>@localhost:${DB_PORT}/${DB_NAME}
+
+Demo schema (seeded)
+- ${DEMO_SCHEMA}.customers
+- ${DEMO_SCHEMA}.orders
+
+Notes for MCP server configuration
+- Use the RO URL for query-only mode.
+- Use the RW URL only for tools that perform INSERT/UPDATE/DELETE.
+- Keep search_path explicit in queries (e.g., SELECT * FROM ${DEMO_SCHEMA}.customers).
 EOF
 
 echo "PostgreSQL setup complete!"
@@ -149,8 +212,17 @@ echo "Port: ${DB_PORT}"
 echo ""
 
 echo "Environment variables saved to db_visualizer/postgres.env"
+echo "Stable MCP connection guidance saved to mcp_connection_guidance.txt"
 echo "To use with Node.js viewer, run: source db_visualizer/postgres.env"
 
-echo "To connect to the database, use one of the following commands:"
-echo "psql -h localhost -U ${DB_USER} -d ${DB_NAME} -p ${DB_PORT}"
-echo "$(cat db_connection.txt)"
+echo ""
+echo "To connect (admin/app user):"
+echo "  psql -h localhost -U ${DB_USER} -d ${DB_NAME} -p ${DB_PORT}"
+echo "  $(cat db_connection.txt)"
+
+echo ""
+echo "To connect (MCP read-only role):"
+echo "  psql postgresql://${MCP_RO_USER}:${MCP_RO_PASSWORD}@localhost:${DB_PORT}/${DB_NAME}"
+
+echo "To connect (MCP read-write role):"
+echo "  psql postgresql://${MCP_RW_USER}:${MCP_RW_PASSWORD}@localhost:${DB_PORT}/${DB_NAME}"
